@@ -1,0 +1,10 @@
+# Generated data and figures (large binaries — regenerate with compute scripts)
+magnon/data/*.jld2
+magnon/figures/output/
+
+# Literature PDFs (copyright)
+literature reference/
+
+# Julia artifacts
+magnon/.julia/
+**/.DS_Store
