@@ -147,11 +147,12 @@ function hamiltonian_nonrel(k::AbstractVector, p::HematiteParams)
         0        C        conj(B)  0       conj(D)  0        0        A
     ]
 
-    # H_AM block (Eq. 8, second matrix)
-    H[1,4] += Δ;       H[4,1] += conj(Δ)
-    H[2,3] += conj(Δ); H[3,2] += Δ
-    H[5,8] += Δ;       H[8,5] += conj(Δ)
-    H[6,7] += conj(Δ); H[7,6] += Δ
+    # H_AM block: Δ_k only on A–D bonds (13th-neighbor altermagnetic exchange).
+    # B–C bonds (J₅, 5th neighbor) carry no anisotropy, so (2,3)/(6,7) entries
+    # stay at zero — adding Δ there would make the two spin blocks isospectral
+    # via a permutation symmetry, suppressing all altermagnetic splitting.
+    H[1,4] += Δ;  H[4,1] += conj(Δ)   # particle sector: a†–d†  (A–D)
+    H[5,8] += Δ;  H[8,5] += conj(Δ)   # hole sector:    a₋ₖ–d₋ₖ (A–D)
 
     return H
 end

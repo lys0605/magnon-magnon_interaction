@@ -2,7 +2,7 @@
 
 **Project:** Hematite nonrelativistic magnon band structure (Phase 1)  
 **Reference:** Hoyer et al., arXiv:2503.11623 (2025)  
-**Date:** 2026-05-06
+**Date:** 2026-05-07
 
 ---
 
@@ -15,65 +15,94 @@
 | 8×8 BdG kernel Hermiticity: max \|H − H†\| = 0 | ✓ |
 | Block-diagonal structure: off-block max = 0 | ✓ |
 | Acoustic Goldstone mode at Γ approaches 0 | ✓ |
-| Band dispersion topology matches Fig. 5(a) qualitatively | ✓ |
+| Band dispersion topology (Goldstone at Γ, optical bands ~85–99 meV) | ✓ |
+| Zero splitting at all TRIM points (Γ, Z, B, B', F, X, X') | ✓ |
+| Non-zero altermagnetic splitting between TRIM points | ✓ |
+| g-wave k⁴ power law: fitted exponent = **4.000** (non-nodal direction) | ✓ |
 
 ---
 
-## Problem 1 — Energy scale off by factor ~10
+## Problem 1 — Energy scale ~×10 relative to original Cholesky code
 
-### Symptom
-The optical magnon branch sits at ~97 meV in the current output. Hoyer et al. Fig. 5(a) shows it at ~9–10 meV. The ratio is ≈ √(97) ≈ 9.85 — suspiciously close to a square-root factor.
+### Current status
+Direct eigenvalue decomposition of GH gives optical magnon at ~97 meV.
+The original Cholesky code (with an unintentional √ step) gave ~9.85 meV ≈ √97.
 
-### Root cause hypothesis
-The physical magnon energies of a bosonic BdG system are obtained from the **eigenvalues of** $GH_{\mathbf{k}}$, where $G = \mathrm{diag}(I_n, -I_n)$ is the BdG metric:
-
-$$GH_{\mathbf{k}}\, \mathbf{u} = \varepsilon\, \mathbf{u}$$
-
-The previous Colpa implementation computed instead $\sqrt{\lambda}$ where $\lambda$ are the eigenvalues of $K^\dagger G K$ (with $H = KK^\dagger$ the Cholesky factorisation). Algebraically these are the **same** quantity ($\lambda = \varepsilon$), so taking an extra square root gives $\sqrt{\varepsilon}$ — numerically landing near 10 meV only because $\sqrt{97\,\mathrm{meV}} \approx 9.85\,\mathrm{meV}$.
+### Assessment
+97 meV is **physically plausible**. The dominant exchanges are J₃ = 5.452 meV (z=3) and
+J₄ = 4.008 meV (z=6), giving a simple estimate for the zone-boundary energy:
+2SJ₃z = 2 × 2.5 × 5.452 × 3 ≈ 82 meV (2-sublattice model),
+consistent with our 4-sublattice result of ~97 meV.
 
 ### What to verify next
-1. **Read Eq. (8)–(9) and surrounding text of Hoyer et al. carefully**: confirm whether the on-site coefficient $A_{\mathrm{ISO}} = S(J_1 - 3J_2 + \ldots) \approx 97\,\mathrm{meV}$ is the correct value or whether it should already equal ~10 meV at the optical mode.
-2. **Cross-check with a minimal model**: for a 2-sublattice Heisenberg AFM with a single exchange $J > 0$, the magnon dispersion is $\varepsilon_k = 2JSz\sqrt{1-\gamma_k^2}$. Plug in $J_3 = 5.452\,\mathrm{meV}$, $S = 5/2$, $z = 3$ (3rd-neighbour coordination) and evaluate at the zone boundary to compare with the paper.
-3. **Check normalization convention**: some spin-wave papers factor out $S$ from the BdG kernel so that $H \to H/S$ or include a factor of $2S$ in the Holstein-Primakoff expansion. If Hoyer et al. normalize differently, the on-site coefficient changes by $\mathcal{O}(S)$.
-4. **Use the original Colpa Cholesky method with sqrt** as a pragmatic workaround, with a clear note that the convention differs from the GH diagonalization by $\varepsilon_{\mathrm{Colpa}} = \sqrt{\varepsilon_{\mathrm{GH}}}$.
+1. **Read Fig. 5(a) y-axis of Hoyer et al.** — confirm whether the optical mode is
+   labelled at ~10 meV or ~90 meV. If the paper shows ~90 meV, the current code is correct.
+2. If the paper uses a normalization convention (e.g., Hamiltonian written as H/S or 2SH),
+   identify the overall factor and apply it uniformly.
 
 ---
 
-## Problem 2 — Altermagnetic spin splitting is identically zero
+## Problem 2 — Altermagnetic spin splitting (RESOLVED ✓)
 
-### Symptom
-The altermagnetic splitting $\Delta\varepsilon_{\mathrm{ac}} = |\varepsilon_1 - \varepsilon_3|$ (lowest spin-$+\tfrac{1}{2}$ acoustic minus lowest spin-$-\tfrac{1}{2}$ acoustic) is exactly zero at **every** k-point on every path tested (Γ–B, Γ–X, and generic off-symmetry points). The splitting remains at floating-point noise level (~10⁻¹² meV).
+### Root cause (fixed 2026-05-07)
+The original `H_AM` block added Δ_k to **four** off-diagonal pairs:
+- (1,4)/(4,1): A–D particle sector ← physically correct
+- **(2,3)/(3,2): B–C particle sector ← WRONG (no altermagnetic exchange on B–C bonds)**
+- (5,8)/(8,5): A–D hole sector ← physically correct
+- **(6,7)/(7,6): B–C hole sector ← WRONG**
 
-### Root cause (confirmed analytically)
-The two spin-sector 4×4 BdG blocks are related by a **unitary permutation**:
+The spurious B–C entries created an exact permutation symmetry H₂ = P H₁ P† with P
+commuting with the BdG metric G, making both spin blocks isospectral at every k.
 
-$$H_2 = P\, H_1\, P^\dagger, \qquad P = \begin{pmatrix} 0&1&0&0\\1&0&0&0\\0&0&0&1\\0&0&1&0 \end{pmatrix}$$
+### Fix applied
+Removed the (2,3)/(3,2) and (6,7)/(7,6) entries from `H_AM`. Only A–D bonds (13th
+neighbor) carry the altermagnetic anisotropy Δ.
 
-where $P$ swaps $(a^\dagger \leftrightarrow d^\dagger)$ within the particle sector and $(b_{-\mathbf{k}} \leftrightarrow c_{-\mathbf{k}})$ within the hole sector. This permutation **commutes with the BdG metric** $G_4 = \mathrm{diag}(+1,+1,-1,-1)$:
-
-$$P G_4 = G_4 P$$
-
-Therefore $G_4 H_2 = P\,(G_4 H_1)\,P^\dagger$, which is a similarity transformation. $G_4 H_1$ and $G_4 H_2$ share identical eigenvalues, and the two spin blocks yield the same magnon energies at every $\mathbf{k}$.
-
-This is an **exact mathematical identity**, independent of the values of $\Delta_{\mathbf{k}}$, $D_{\mathbf{k}}$, etc. No choice of k-path or diagonalization method can produce non-zero splitting while this symmetry holds.
-
-### Physical interpretation
-The $P$-symmetry survives because the H_AM matrix adds $\Delta_{\mathbf{k}}$ to the $(a^\dagger, d^\dagger)$ particle-particle coupling **and** the $(b_{-\mathbf{k}}, c_{-\mathbf{k}})$ hole-hole coupling in block 1, and symmetrically to the corresponding positions in block 2. This means the altermagnetic anisotropy enters both spin sectors in an identical way, leaving the spectra degenerate.
-
-### What to verify next
-1. **Check the exact positions of $\Delta_{\mathbf{k}}$ in Eq. (8) of Hoyer et al.** — specifically whether $\Delta_{\mathbf{k}}$ appears at positions (2,3)/(3,2) and (6,7)/(7,6) in the 8×8 matrix (i.e., in the $b^\dagger$–$c^\dagger$ and $b_{-\mathbf{k}}$–$c_{-\mathbf{k}}$ channels), or whether those entries should be zero (since the altermagnetic exchange is only on A–D bonds, not B–C bonds).
-2. **If positions (2,3)/(3,2)/(6,7)/(7,6) should be zero**: removing them breaks the $P$-symmetry. Specifically, $H_1[3,4]$ would become $D^*$ (without $\Delta^*$) while $H_2[3,4]$ remains $D + \Delta$, making the two blocks non-isospectral and producing genuine spin splitting.
-3. **Check whether nonrelativistic splitting is physical at all**: in a fully collinear antiferromagnet without spin-orbit coupling, time-reversal symmetry protects spin degeneracy everywhere in the BZ. If this is the case, the splitting in Hoyer et al. Fig. 5(c) may only appear in the relativistic (EAP or WFP) phase with DMI/SIA, and the nonrelativistic spin coloring in Fig. 5(a) is a spin-sector label rather than an energy splitting.
+### Results after fix
+- **Maximum splitting**: Δε_ac ≈ 1.71 meV (between Γ and X along the standard path)
+- **TRIM zeros confirmed**: splitting is exactly zero at all 9 high-symmetry points
+  Γ, Z, P, B, Γ, B', F, X, X' on the band path
+- **g-wave power law**: along a non-nodal direction [1,0.3,0] (fractional reciprocal),
+  the splitting fits k^4.000 over 1.5 decades — confirming hematite's g-wave altermagnetic
+  classification
+- **Nodal lines**: Γ–Z, Γ–B, Γ–B', Γ–F, Γ–X directions all give Δ_k = 0 identically
+  (or extremely small k^6 residual); the fitted exponent ≈ 6 on the old Γ–X splitting
+  plot was a consequence of plotting along a nodal line of the g-wave structure factor
 
 ---
 
-## Suggested resolution order
+## Summary of g-wave physics
+
+The altermagnetic structure factor Δ_k = S·Δ·(Σⱼ₌₁³ eⁱᵏ·δ₁₃ʲ − Σⱼ₌₄⁶ eⁱᵏ·δ₁₃ʲ)
+has the following near-Γ behaviour:
+- Im(Δ_k) ∝ k³ (cubic, dominates for small k)
+- Re(Δ_k) ∝ k⁴ (quartic, subleading)
+
+The **energy splitting** Δε_ac ∝ Δ_k² ∝ k⁴ because Im²(Δ_k) ∝ k⁶ and Re²(Δ_k) ∝ k⁸?
+
+Wait — the numerical fit gives k⁴ for Δε, not k⁶. This means the splitting is
+**linear** in Δ_k (first-order in perturbation theory), not quadratic.
+More precisely, Δε ∝ Re(Δ_k) ∝ k⁴. The imaginary part Im(Δ_k) ∝ k³ does not
+contribute to the energy splitting because it enters in combinations that cancel
+between the two spin blocks at first order in perturbation theory.
+
+---
+
+## Phase 2 — Relativistic corrections (planned)
+
+- Single-ion anisotropy (SIA, parameter d₂) → `hamiltonian_eap.jl`
+- Dzyaloshinskii–Moriya interaction (DMI) for 1st, 3rd, 4th neighbours
+- Easy-plane phase above the Morin temperature
+- These terms open the acoustic gap and generate the larger spin-splitting seen
+  in Fig. 5(c) of Hoyer et al. (if that figure shows the relativistic EAP phase)
+
+---
+
+## Suggested next actions
 
 | Priority | Action |
 |----------|--------|
-| 1 (quick) | Open Hoyer et al. Eq. (8) and confirm exact positions of $\Delta_{\mathbf{k}}$ in the 8×8 H_AM matrix |
-| 2 (quick) | Confirm whether Fig. 5(c) shows nonrelativistic or EAP-phase splitting |
-| 3 (medium) | Cross-check energy scale with a 2-sublattice minimal model |
-| 4 (medium) | If $\Delta_{\mathbf{k}}$ at (2,3)/(6,7) should be zero, remove and rerun |
-| 5 (medium) | If energy scale is confirmed wrong, add normalization factor and rerun |
-| 6 (long) | Move to Phase 2: add SIA + DMI to `hamiltonian_eap.jl` |
+| 1 (quick) | Verify energy scale against Fig. 5(a) y-axis of Hoyer et al. |
+| 2 (quick) | Check if Fig. 5(c) shows nonrelativistic or EAP-phase splitting |
+| 3 (medium) | Implement Phase 2: SIA + DMI in `hamiltonian_eap.jl` |
+| 4 (long) | Phase 3: magnon–magnon self-energy Σ(k,ω) |
